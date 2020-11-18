@@ -35,13 +35,14 @@ const defaultTimeout time.Duration = 30 * time.Second
 
 // CasbinRule represents a rule in Casbin.
 type CasbinRule struct {
-	PType string
-	V0    string
-	V1    string
-	V2    string
-	V3    string
-	V4    string
-	V5    string
+	ID    interface{} `bson:"_id,omitempty"`
+	PType string      `bson:"ptype"`
+	V0    string      `bson:"v0"`
+	V1    string      `bson:"v1"`
+	V2    string      `bson:"v2"`
+	V3    string      `bson:"v3"`
+	V4    string      `bson:"v4"`
+	V5    string      `bson:"v5"`
 }
 
 // adapter represents the MongoDB adapter for policy storage.
@@ -50,6 +51,7 @@ type adapter struct {
 	client       *mongo.Client
 	collection   *mongo.Collection
 	timeout      time.Duration
+	updatable    bool
 	filtered     bool
 }
 
@@ -117,6 +119,31 @@ func NewFilteredAdapter(url string) (persist.FilteredAdapter, error) {
 		return nil, err
 	}
 	a.(*adapter).filtered = true
+
+	return a.(*adapter), nil
+}
+
+// NewUpdatableAdapter is the constructor for an UpdatableAdapter. It is the standard Adapter, with
+// ability to update a single policy. If database name is not provided in the Mongo URL, 'casbin' will
+// be used as database name.
+func NewUpdatableAdapter(url string, timeout ...interface{}) (persist.UpdatableAdapter, error) {
+	a, err := NewAdapter(url, timeout...)
+	if err != nil {
+		return nil, err
+	}
+	a.(*adapter).updatable = true
+
+	return a.(*adapter), nil
+}
+
+// NewUpdatableAdapterWithClientOption is an alternative constructor for UpdatableAdapter
+// that does the same as NewUpdatableAdapter, but uses mongo.ClientOption instead of a Mongo URL
+func NewUpdatableAdapterWithClientOption(clientOption *options.ClientOptions, databaseName string, timeout ...interface{}) (persist.UpdatableAdapter, error) {
+	a, err := NewAdapterWithClientOption(clientOption, databaseName, timeout...)
+	if err != nil {
+		return nil, err
+	}
+	a.(*adapter).updatable = true
 
 	return a.(*adapter), nil
 }
@@ -363,6 +390,25 @@ func (a *adapter) RemoveFilteredPolicy(sec string, ptype string, fieldIndex int,
 	defer cancel()
 
 	if _, err := a.collection.DeleteMany(ctx, selector); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// UpdatePolicy updates a policy rule from storage.
+func (a *adapter) UpdatePolicy(sec string, ptype string, oldRule, newPolicy []string) error {
+	// NewUpdatableAdapter must be used for this function to be allowed
+	if !a.updatable {
+		return errors.New("cannot save updated policy")
+	}
+	filter := savePolicyLine(ptype, oldRule)
+	update := savePolicyLine(ptype, newPolicy)
+
+	ctx, cancel := context.WithTimeout(context.TODO(), a.timeout)
+	defer cancel()
+
+	if _, err := a.collection.UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: update}}); err != nil {
 		return err
 	}
 
