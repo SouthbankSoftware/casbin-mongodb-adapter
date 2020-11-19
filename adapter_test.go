@@ -35,31 +35,40 @@ func getDbURL() string {
 }
 
 // Setup performs initialization of a fresh dataset for testing.
-func setup(ctx context.Context, a *adapter, data [][]string) {
-	// Delete all the casbin_rule collection data
-	_, err := a.collection.DeleteMany(ctx, bson.D{})
-	if err != nil {
-		panic(err)
-	}
-
-	// Generate our rules for insert
-	lines := make([]interface{}, 0)
-	for k := range data {
-		line := savePolicyLine(data[k][0], data[k][1:])
-		lines = append(lines, &line)
-	}
-	if len(lines) != 0 {
-		_, err = a.collection.InsertMany(ctx, lines)
+// - data should be an array of CasbinRule, as that is the document representation in Mongo
+// for a rule. This ensures data in Mongo is exactly how we would expect to see it.
+func setup(a *adapter, data []interface{}) {
+	if len(data) != 0 {
+		_, err := a.collection.InsertMany(context.TODO(), data)
 		if err != nil {
 			panic(err)
 		}
 	}
 }
 
+// setupRBAC performs setup of test data using the model from examples/rbac_model.conf
+func setupRBAC(a *adapter) {
+	setup(a, []interface{}{
+		CasbinRule{nil, "p", "alice", "data1", "read", "", "", ""},
+		CasbinRule{nil, "p", "bob", "data2", "write", "", "", ""},
+		CasbinRule{nil, "p", "data2_admin", "data2", "read", "", "", ""},
+		CasbinRule{nil, "p", "data2_admin", "data2", "write", "", "", ""},
+		CasbinRule{nil, "g", "alice", "data2_admin", "", "", "", ""},
+	})
+}
+
+// setupRBACTenancy performs setup of test data using the model from examples/rbac_tenant_service.conf
+func setupRBACTenancy(a *adapter) {
+	setup(a, []interface{}{
+		CasbinRule{nil, "p", "domain1", "alice", "data3", "read", "accept", "service1"},
+		CasbinRule{nil, "p", "domain1", "alice", "data3", "write", "accept", "service2"},
+	})
+}
+
 // Teardown performs deletion of test data for clean up.
-func teardown(ctx context.Context, a *adapter) {
+func teardown(a *adapter) {
 	// Delete all the casbin_rule collection data
-	_, err := a.collection.DeleteMany(ctx, bson.D{})
+	_, err := a.collection.DeleteMany(context.TODO(), bson.D{})
 	if err != nil {
 		panic(err)
 	}
@@ -90,20 +99,10 @@ func TestAdapter(t *testing.T) {
 
 	// Get the Mongo adapter implementation so we have access to the client
 	ma := a.(*adapter)
-	ctx, cancel := context.WithTimeout(context.TODO(), defaultTimeout)
 
 	// Setup to populate our test data
-	setup(ctx, ma, [][]string{
-		{"p", "alice", "data1", "read"},
-		{"p", "bob", "data2", "write"},
-		{"p", "data2_admin", "data2", "read"},
-		{"p", "data2_admin", "data2", "write"},
-		{"g", "alice", "data2_admin"},
-	})
-	defer func() {
-		teardown(ctx, ma)
-		cancel()
-	}()
+	setupRBAC(ma)
+	defer teardown(ma)
 
 	e, err := casbin.NewEnforcer("examples/rbac_model.conf", a)
 	if err != nil {
@@ -168,6 +167,7 @@ func TestAdapter(t *testing.T) {
 	}
 	testGetPolicy(t, e, [][]string{})
 }
+
 func TestDeleteFilteredAdapter(t *testing.T) {
 	a, err := NewAdapter(getDbURL())
 	if err != nil {
@@ -176,17 +176,10 @@ func TestDeleteFilteredAdapter(t *testing.T) {
 
 	// Get the Mongo adapter implementation so we have access to the client
 	ma := a.(*adapter)
-	ctx, cancel := context.WithTimeout(context.TODO(), defaultTimeout)
 
 	// Setup to populate our test data
-	setup(ctx, ma, [][]string{
-		{"p", "domain1", "alice", "data3", "read", "accept", "service1"},
-		{"p", "domain1", "alice", "data3", "write", "accept", "service2"},
-	})
-	defer func() {
-		teardown(ctx, ma)
-		cancel()
-	}()
+	setupRBACTenancy(ma)
+	defer teardown(ma)
 
 	e, err := casbin.NewEnforcer("examples/rbac_tenant_service.conf", a)
 	if err != nil {
@@ -224,17 +217,13 @@ func TestFilteredAdapter(t *testing.T) {
 
 	// Get the Mongo adapter implementation so we have access to the client
 	ma := a.(*adapter)
-	ctx, cancel := context.WithTimeout(context.TODO(), defaultTimeout)
 
 	// Setup to populate our test data
-	setup(ctx, ma, [][]string{
-		{"p", "alice", "data1", "write"},
-		{"p", "bob", "data2", "write"},
+	setup(ma, []interface{}{
+		CasbinRule{nil, "p", "alice", "data1", "write", "", "", ""},
+		CasbinRule{nil, "p", "bob", "data2", "write", "", "", ""},
 	})
-	defer func() {
-		teardown(ctx, ma)
-		cancel()
-	}()
+	defer teardown(ma)
 
 	e, err := casbin.NewEnforcer("examples/rbac_model.conf", a)
 	if err != nil {
@@ -275,7 +264,7 @@ func TestFilteredAdapter(t *testing.T) {
 	testGetPolicy(t, e, [][]string{})
 }
 
-func TestAdapter_UpdatePolicy(t *testing.T) {
+func TestUpdatableAdapter_UpdatePolicy(t *testing.T) {
 	// Create the new adapter
 	a, err := NewUpdatableAdapter(getDbURL())
 	if err != nil {
@@ -283,20 +272,10 @@ func TestAdapter_UpdatePolicy(t *testing.T) {
 	}
 	// Get the Mongo adapter implementation so we have access to the client
 	ma := a.(*adapter)
-	ctx, cancel := context.WithTimeout(context.TODO(), defaultTimeout)
 
 	// Setup to populate our test data
-	setup(ctx, ma, [][]string{
-		{"p", "alice", "data1", "read"},
-		{"p", "bob", "data2", "write"},
-		{"p", "data2_admin", "data2", "read"},
-		{"p", "data2_admin", "data2", "write"},
-		{"g", "alice", "data2_admin"},
-	})
-	defer func() {
-		teardown(ctx, ma)
-		cancel()
-	}()
+	setupRBAC(ma)
+	defer teardown(ma)
 
 	// Get the stored document to be updated before running the test
 	filter := &CasbinRule{
@@ -307,7 +286,7 @@ func TestAdapter_UpdatePolicy(t *testing.T) {
 	}
 
 	var before *CasbinRule
-	if err := ma.collection.FindOne(ctx, filter).Decode(&before); err != nil {
+	if err := ma.collection.FindOne(context.TODO(), filter).Decode(&before); err != nil {
 		t.Fatal(err)
 	}
 	// Modify the rule to allow 'write' access and
@@ -320,7 +299,7 @@ func TestAdapter_UpdatePolicy(t *testing.T) {
 	// If no result, ID has been changed which should fail. Updates in Mongo don't affect
 	// the _id.
 	var actual *CasbinRule
-	if err := ma.collection.FindOne(ctx, bson.D{{Key: "_id", Value: before.ID}}).Decode(&actual); err != nil {
+	if err := ma.collection.FindOne(context.TODO(), bson.M{"_id": before.ID}).Decode(&actual); err != nil {
 		t.Fatal(err)
 	}
 
@@ -340,7 +319,28 @@ func TestAdapter_UpdatePolicy(t *testing.T) {
 	}
 }
 
-func TestAdapter_UpdatePolicy2(t *testing.T) {
+func TestFilteredAdapter_UpdatePolicy(t *testing.T) {
+	// Create the new adapter (not updatable)
+	a, err := NewFilteredAdapter(getDbURL())
+	if err != nil {
+		panic(err)
+	}
+	// Get the Mongo adapter implementation so we have access to the client
+	ma := a.(*adapter)
+
+	// Setup to populate our test data
+	setupRBAC(ma)
+	defer teardown(ma)
+
+	oldRule := []string{"alice", "data1", "read"}
+	newRule := []string{"alice", "data2", "write"}
+	// This should fail because we haven't initialized with NewUpdatableAdapter
+	if err := ma.UpdatePolicy("ignored", "p", oldRule, newRule); err == nil {
+		t.Fatal("UpdatePolicy should not have been allowed")
+	}
+}
+
+func TestAdapter_UpdatePolicy(t *testing.T) {
 	// Create the new adapter (not updatable)
 	a, err := NewAdapter(getDbURL())
 	if err != nil {
@@ -348,20 +348,10 @@ func TestAdapter_UpdatePolicy2(t *testing.T) {
 	}
 	// Get the Mongo adapter implementation so we have access to the client
 	ma := a.(*adapter)
-	ctx, cancel := context.WithTimeout(context.TODO(), defaultTimeout)
 
 	// Setup to populate our test data
-	setup(ctx, ma, [][]string{
-		{"p", "alice", "data1", "read"},
-		{"p", "bob", "data2", "write"},
-		{"p", "data2_admin", "data2", "read"},
-		{"p", "data2_admin", "data2", "write"},
-		{"g", "alice", "data2_admin"},
-	})
-	defer func() {
-		teardown(ctx, ma)
-		cancel()
-	}()
+	setupRBAC(ma)
+	defer teardown(ma)
 
 	oldRule := []string{"alice", "data1", "read"}
 	newRule := []string{"alice", "data2", "write"}
