@@ -13,7 +13,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-module github.com/SouthbankSoftware/casbin-mongodb-adapter
+module github.com/SouthbankSoftware/casbin-mongodb-adapter/v3
 
 go 1.15
 
