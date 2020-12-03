@@ -1,11 +1,16 @@
-MongoDB Adapter [![Build Status](https://travis-ci.org/casbin/mongodb-adapter.svg?branch=master)](https://travis-ci.org/casbin/mongodb-adapter) [![Coverage Status](https://coveralls.io/repos/github/casbin/mongodb-adapter/badge.svg?branch=master)](https://coveralls.io/github/casbin/mongodb-adapter?branch=master) [![Godoc](https://godoc.org/github.com/casbin/mongodb-adapter?status.svg)](https://godoc.org/github.com/casbin/mongodb-adapter)
+Casbin MongoDB Adapter
 ====
 
-MongoDB Adapter is the [Mongo DB](https://www.mongodb.com) adapter for [Casbin](https://github.com/casbin/casbin). With this library, Casbin can load policy from MongoDB or save policy to it.
+Originally forked from [casbin/mongodb-adapter](https://github.com/casbin/mongodb-adapter).
+
+MongoDB Adapter is the [Mongo DB](https://www.mongodb.com) adapter for [Casbin](https://github.com/casbin/casbin). This library offers implementations for:
+- Adapter
+- FilteredAdatper
+- UpdatableAdatper
 
 ## Installation
 
-    go get -u github.com/casbin/mongodb-adapter/v3
+`go get github.com/SouthbankSoftware/casbin-mongodb-adapter`
 
 ## Simple Example
 
@@ -14,7 +19,7 @@ package main
 
 import (
 	"github.com/casbin/casbin/v2"
-	"github.com/casbin/mongodb-adapter/v3"
+	mongodbadapter "github.com/SouthbankSoftware/casbin-mongodb-adapter"
 )
 
 func main() {
